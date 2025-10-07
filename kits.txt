@@ -1,0 +1,7 @@
+# One kit per line: Kit Name, block1, block2, block3
+# below are kits uses for testing purposes only
+Starter Kit, grass, wool, glass
+Builder Kit, stone, oak planks, glass pane, torch, crafting table, furnace
+Hunter Kit, bow, arrow, cooked beef, leather boots
+Miner Kit, iron pickaxe, torch, ladder, stone, cobblestone
+Farmer Kit, seeds, wheat, carrot, potato, water bucket, hoe
