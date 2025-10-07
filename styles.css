@@ -27,6 +27,8 @@ html, body {
   line-height: 1.5;
 }
 
+body.no-scroll { overflow: hidden; }
+
 .site-header {
   background: linear-gradient(180deg, rgba(93,214,107,0.12), rgba(0,0,0,0));
   border-bottom: 1px solid var(--border);
@@ -231,6 +233,7 @@ html, body {
   aspect-ratio: 16 / 9;
   object-fit: cover;
   background: #0c1410;
+  cursor: zoom-in;
 }
 .sshot-status {
   position: absolute;
@@ -267,3 +270,51 @@ html, body {
   cursor: pointer;
 }
 .btn:hover { filter: brightness(1.05); }
+
+/* Lightbox */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.lightbox.open { display: flex; }
+.lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.78);
+  backdrop-filter: blur(2px);
+}
+.lightbox-content {
+  position: relative;
+  max-width: 96vw;
+  max-height: 96vh;
+  margin: 0;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+.lightbox-content img {
+  max-width: 96vw;
+  max-height: 92vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  background: #000;
+  border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.6);
+  cursor: zoom-out;
+}
+.lightbox-content figcaption {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  max-width: 96vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
