@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Minecraft Kit Finder</title>
+  <title>Kiti Kit Finder</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600&display=swap" rel="stylesheet">
@@ -12,8 +12,8 @@
 <body>
   <header class="site-header">
     <div class="header-inner">
-      <h1 class="brand">Kit Finder</h1>
-      <p class="tagline">Edit kits.txt to add kits and each kit’s screenshot path. Fuzzy search supports typos and plurals. Click a kit to see its screenshot.</p>
+      <h1 class="brand">Kiti Kit Finder</h1>
+      <p class="tagline">Fuzzy search supports typos and plurals. Click a kit to see its screenshot. Click the image to expand, press Esc to close.</p>
     </div>
   </header>
 
@@ -39,10 +39,19 @@
 
   <footer class="site-footer">
     <p>
-      kits.txt format:
-      “Kit Name, block1, block2, … | images/kit-image.png”
+      kiti kits
+      Every block in the whole game.
     </p>
   </footer>
+
+  <!-- Reusable lightbox overlay -->
+  <div id="lightbox" class="lightbox" aria-hidden="true" role="dialog" aria-label="Image preview">
+    <div class="lightbox-backdrop"></div>
+    <figure class="lightbox-content" role="document">
+      <img id="lightboxImg" alt="" />
+      <figcaption id="lightboxCaption"></figcaption>
+    </figure>
+  </div>
 
   <script src="./app.js" type="module"></script>
 </body>
