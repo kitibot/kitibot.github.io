@@ -13,11 +13,15 @@ const els = {
   summary: document.getElementById('summary'),
   grid: document.getElementById('kitsGrid'),
   empty: document.getElementById('emptyState'),
+  lightbox: document.getElementById('lightbox'),
+  lightboxImg: document.getElementById('lightboxImg'),
+  lightboxCaption: document.getElementById('lightboxCaption'),
 };
 
 init();
 
 async function init() {
+  bindLightbox();
   await loadKits();
   bindUI();
   render();
@@ -295,6 +299,20 @@ function renderCard(kit, matchedBlocks, isOpen) {
     }
   });
 
+  // Clicking the image opens lightbox (load first if needed)
+  img.addEventListener('click', () => {
+    if (img.dataset.loaded === 'true' && img.src) {
+      openLightbox(img.src, img.alt, kit.name);
+    } else {
+      loadScreenshot(img, status, kit.screenshot, kit.name);
+      const onLoad = () => {
+        openLightbox(img.src, img.alt, kit.name);
+        img.removeEventListener('load', onLoad);
+      };
+      img.addEventListener('load', onLoad);
+    }
+  });
+
   if (isOpen) {
     details.style.height = `${details.scrollHeight || 0}px`;
     loadScreenshot(img, status, kit.screenshot, kit.name);
@@ -369,6 +387,57 @@ function loadScreenshot(imgEl, statusEl, screenshotPath, kitName) {
   }
   imgEl.addEventListener('load', onLoad);
   imgEl.addEventListener('error', onError);
+}
+
+/* ------------- Lightbox (click image to expand, Esc/backdrop to close) ------------- */
+
+function bindLightbox() {
+  const lb = els.lightbox;
+  const img = els.lightboxImg;
+  const caption = els.lightboxCaption;
+
+  // Close on backdrop click
+  lb.addEventListener('click', (e) => {
+    // Only close if clicking the backdrop area, not the image/caption
+    if (e.target === lb || e.target.classList.contains('lightbox-backdrop')) {
+      closeLightbox();
+    }
+  });
+
+  // Prevent clicks on content from bubbling to overlay
+  const content = lb.querySelector('.lightbox-content');
+  content.addEventListener('click', (e) => e.stopPropagation());
+
+  // Esc to close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && lb.classList.contains('open')) {
+      closeLightbox();
+    }
+  });
+
+  // Expose helpers
+  window.openLightbox = (src, alt, title) => {
+    img.src = src;
+    img.alt = alt || '';
+    caption.textContent = title || '';
+    lb.classList.add('open');
+    lb.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('no-scroll');
+  };
+  window.closeLightbox = () => {
+    lb.classList.remove('open');
+    lb.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('no-scroll');
+    // Do not clear src to allow quick reopen; browser caches it.
+  };
+}
+
+function openLightbox(src, alt, title) {
+  // replaced at runtime in bindLightbox
+  window.openLightbox(src, alt, title);
+}
+function closeLightbox() {
+  window.closeLightbox();
 }
 
 /* ------------- Highlighting ------------- */
