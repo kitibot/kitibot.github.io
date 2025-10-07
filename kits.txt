@@ -1,5 +1,5 @@
 # One kit per line: Kit Name, block1, block2, block3
-# below are kits uses for testing purposes only
+# below is kits for testing purposes
 Starter Kit, grass, wool, glass
 Builder Kit, stone, oak planks, glass pane, torch, crafting table, furnace
 Hunter Kit, bow, arrow, cooked beef, leather boots
