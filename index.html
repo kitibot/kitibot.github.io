@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kiti Kit Finder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <h1 class="brand">Kiti Kit Finder</h1>
+      <p class="tagline">Search a block (e.g., “grass”) to see which kits include it. Fuzzy search supports typos and plurals.</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="controls">
+      <div class="search">
+        <input id="searchInput" type="search" placeholder="Search blocks (e.g., grass, glass pane, plank)" autocomplete="off" />
+        <button id="clearSearch" aria-label="Clear search" title="Clear search">✕</button>
+      </div>
+      <div class="actions">
+        <button id="reloadBtn" class="btn">Reload kits.txt</button>
+        <span id="summary" class="summary">Loading kits…</span>
+      </div>
+    </section>
+
+    <section id="kitsSection">
+      <div id="kitsGrid" class="kits-grid" aria-live="polite"></div>
+      <div id="emptyState" class="empty">
+        <p>Type a block name to search, like “grass”.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>kitibot</p>
+  </footer>
+
+  <script src="./app.js" type="module"></script>
+</body>
+</html>
