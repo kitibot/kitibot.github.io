@@ -1,8 +1,9 @@
 const DATA_URL = './kits.txt';
 
 const state = {
-  kits: [],       // [{ name, blocks }]
-  tokens: [],     // search tokens
+  kits: [],        // [{ name, blocks, screenshot }]
+  tokens: [],      // search tokens
+  open: new Set(), // slugs of open kits for persistent expand state
 };
 
 const els = {
@@ -56,43 +57,54 @@ async function loadKits(bustCache = false) {
   }
 }
 
+/*
+Supports lines like:
+  Kit Name, block1, block2, block3 | images/kit.png
+- Text before "|" is the kit name + blocks (comma-separated, first item is the name).
+- Text after "|" is the screenshot path (optional). Quotes around the path are allowed.
+*/
 function parseKitsText(text) {
-  // Each non-empty, non-comment line: Kit Name, block1, block2, ...
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
   const kits = [];
   for (const line of lines) {
-    const parts = line.split(',').map(s => s.trim()).filter(Boolean);
+    const partsPipe = line.split('|'); // allow one optional pipe
+    const head = partsPipe[0].trim(); // "Kit Name, block1, block2"
+    const screenshot = partsPipe[1] ? stripQuotes(partsPipe.slice(1).join('|').trim()) : null;
+
+    const parts = head.split(',').map(s => s.trim()).filter(Boolean);
     if (!parts.length) continue;
+
     const name = parts[0];
     const blocks = parts.slice(1).map(normalize).filter(Boolean);
-    kits.push({ name, blocks });
+    kits.push({ name, blocks, screenshot });
   }
   return kits;
 }
 
-// Normalize and light singularization for better matching
+function stripQuotes(s) {
+  if (!s) return s;
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+/* ------------- Fuzzy search helpers ------------- */
+
 function normalize(str) {
   return str.toLowerCase().normalize('NFKC').replace(/\s+/g, ' ').trim();
 }
 function singularize(s) {
-  // very light English singularization
-  if (s.endsWith('ies') && s.length > 3) return s.slice(0, -3) + 'y';            // berries -> berry
-  if (s.endsWith('sses')) return s.slice(0, -2);                                  // classes -> class
-  if (s.endsWith('xes') || s.endsWith('ches') || s.endsWith('shes')) return s.slice(0, -2); // boxes -> box, matches -> match
-  if (s.endsWith('es') && s.length > 3) return s.slice(0, -2);                    // stones -> stone
-  if (s.endsWith('s') && s.length > 3) return s.slice(0, -1);                     // planks -> plank
+  if (s.endsWith('ies') && s.length > 3) return s.slice(0, -3) + 'y';
+  if (s.endsWith('sses')) return s.slice(0, -2);
+  if (s.endsWith('xes') || s.endsWith('ches') || s.endsWith('shes')) return s.slice(0, -2);
+  if (s.endsWith('es') && s.length > 3) return s.slice(0, -2);
+  if (s.endsWith('s') && s.length > 3) return s.slice(0, -1);
   return s;
 }
-
 function tokenize(q) {
-  return (q || '')
-    .toLowerCase()
-    .split(/[, ]+/)
-    .map(s => singularize(normalize(s)))
-    .filter(Boolean);
+  return (q || '').toLowerCase().split(/[, ]+/).map(s => singularize(normalize(s))).filter(Boolean);
 }
-
-// Levenshtein distance (iterative two-row), returns integer edits
 function levenshtein(a, b) {
   const m = a.length, n = b.length;
   if (m === 0) return n;
@@ -105,35 +117,25 @@ function levenshtein(a, b) {
     const ca = a.charCodeAt(i - 1);
     for (let j = 1; j <= n; j++) {
       const cost = ca === b.charCodeAt(j - 1) ? 0 : 1;
-      curr[j] = Math.min(
-        curr[j - 1] + 1,     // insert
-        prev[j] + 1,         // delete
-        prev[j - 1] + cost   // substitute
-      );
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
     }
     [prev, curr] = [curr, prev];
   }
   return prev[n];
 }
-
-// Compute token vs text best window similarity with highlight location
 function bestWindowSimilarity(text, token) {
   const t = singularize(normalize(text));
   const q = singularize(normalize(token));
   if (!q) return { score: 0, start: -1, end: -1, exact: false };
-
-  // Exact substring fast path
   const idx = t.indexOf(q);
   if (idx !== -1) return { score: 1, start: idx, end: idx + q.length, exact: true };
 
-  // Prefix boost
   let prefixScore = 0;
   if (t.startsWith(q) || q.startsWith(t)) {
     const len = Math.min(t.length, q.length);
     prefixScore = len / Math.max(t.length, q.length);
   }
 
-  // Sliding window approximate match
   const w = q.length;
   let best = { score: prefixScore, start: -1, end: -1, exact: false };
   if (t.length === 0) return best;
@@ -145,33 +147,23 @@ function bestWindowSimilarity(text, token) {
     if (sim > best.score) best = { score: sim, start: s, end: s + w, exact: false };
     if (best.score === 1) break;
   }
-
-  // Also compare whole word/string (helps for short tokens vs longer words)
   const wholeDist = levenshtein(t, q);
   const wholeSim = 1 - wholeDist / Math.max(t.length, q.length);
   if (wholeSim > best.score) best = { score: wholeSim, start: -1, end: -1, exact: false };
-
   return best;
 }
-
-// Adaptive threshold based on token length (more forgiving for longer tokens)
 function similarityThresholdFor(len) {
-  if (len <= 2) return 1.0;   // very short terms must be exact
+  if (len <= 2) return 1.0;
   if (len === 3) return 0.85;
   if (len <= 5) return 0.78;
   if (len <= 8) return 0.72;
   return 0.68;
 }
-
-// For a block string, compute the best match info for a token
 function matchTokenToBlock(token, block) {
-  // Compare against entire block and each word inside the block
   const words = singularize(normalize(block)).split(' ');
   let best = { score: 0, start: -1, end: -1, exact: false, target: singularize(normalize(block)), inWordIndex: -1 };
-  // Whole block
   let bw = bestWindowSimilarity(block, token);
   if (bw.score > best.score) best = { ...bw, target: singularize(normalize(block)), inWordIndex: -1 };
-  // Per-word
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
     const res = bestWindowSimilarity(w, token);
@@ -179,6 +171,8 @@ function matchTokenToBlock(token, block) {
   }
   return best;
 }
+
+/* ------------- Rendering ------------- */
 
 function render() {
   els.grid.innerHTML = '';
@@ -196,14 +190,12 @@ function render() {
     return;
   }
 
-  // Build results with fuzzy matching and scoring
   const results = [];
   for (const kit of state.kits) {
     const matchedBlocks = [];
     let kitScore = 0;
 
     for (const block of kit.blocks) {
-      // For this block, find its best token match
       let bestForBlock = { score: 0, token: '', match: null };
       for (const tokRaw of tokens) {
         const tok = singularize(normalize(tokRaw));
@@ -220,7 +212,6 @@ function render() {
     }
 
     if (matchedBlocks.length) {
-      // Sort matched blocks by score desc
       matchedBlocks.sort((a, b) => b.score - a.score);
       results.push({ kit, matchedBlocks, kitScore, hitsCount: matchedBlocks.length });
     }
@@ -232,7 +223,6 @@ function render() {
     return;
   }
 
-  // Rank: higher total score, then more hits, then kit name
   results.sort((a, b) =>
     b.kitScore - a.kitScore ||
     b.hitsCount - a.hitsCount ||
@@ -243,42 +233,151 @@ function render() {
 
   const frag = document.createDocumentFragment();
   for (const { kit, matchedBlocks } of results) {
-    frag.appendChild(renderCard(kit, matchedBlocks));
+    const kitId = slugify(kit.name);
+    const card = renderCard(kit, matchedBlocks, state.open.has(kitId));
+    frag.appendChild(card);
   }
   els.grid.appendChild(frag);
 }
 
-function renderCard(kit, matchedBlocks) {
+function renderCard(kit, matchedBlocks, isOpen) {
+  const kitId = slugify(kit.name);
   const card = div('card');
+  if (isOpen) card.classList.add('open');
+
   const header = div('card-header');
   const title = el('h2', 'card-title', kit.name);
   const meta = el('div', 'card-meta', `${matchedBlocks.length} matching block${matchedBlocks.length > 1 ? 's' : ''}`);
   header.append(title, meta);
 
   const blocksWrap = div('blocks');
-
-  // Matched blocks first with highlight; then (optional) other blocks could be listed faded if desired
   for (const mb of matchedBlocks) {
     const chip = el('span', 'block-chip');
-    const blockText = mb.originalBlock;
-
-    // Try to highlight the best window on either the whole block or the word that matched best.
-    const highlighted = highlightApprox(blockText, mb.token, mb.match);
+    const highlighted = highlightApprox(mb.originalBlock, mb.token, mb.match);
     chip.innerHTML = highlighted.html;
-    if (!highlighted.hadExact) chip.classList.add('fuzzy'); // mark fuzzy matches
+    if (!highlighted.hadExact) chip.classList.add('fuzzy');
     blocksWrap.appendChild(chip);
   }
 
-  card.append(header, blocksWrap);
+  const toggleBtn = el('button', 'card-toggle');
+  toggleBtn.setAttribute('type', 'button');
+  toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  toggleBtn.innerHTML = `<span class="chev">▾</span> View kit screenshot`;
+
+  // Details area (collapsed/expanded)
+  const details = div('card-details');
+  const inner = div('details-inner');
+
+  const shotWrap = div('screenshot-wrap');
+  const status = el('div', 'sshot-status', 'Click to load screenshot…');
+  const img = document.createElement('img');
+  img.className = 'screenshot';
+  img.alt = `${kit.name} screenshot`;
+  img.decoding = 'async';
+  img.loading = 'lazy';
+  shotWrap.append(img, status);
+
+  inner.appendChild(shotWrap);
+  details.appendChild(inner);
+
+  // Toggle behavior
+  toggleBtn.addEventListener('click', () => {
+    const nowOpen = card.classList.toggle('open');
+    toggleBtn.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+
+    if (nowOpen) {
+      state.open.add(kitId);
+      animateOpen(details);
+      loadScreenshot(img, status, kit.screenshot, kit.name);
+    } else {
+      state.open.delete(kitId);
+      animateClose(details);
+    }
+  });
+
+  if (isOpen) {
+    details.style.height = `${details.scrollHeight || 0}px`;
+    loadScreenshot(img, status, kit.screenshot, kit.name);
+  }
+
+  const headerRow = div('card-header');
+  headerRow.append(toggleBtn);
+
+  card.append(header, blocksWrap, headerRow, details);
   return card;
 }
+
+/* ------------- Expand/collapse animation ------------- */
+
+function animateOpen(el) {
+  el.style.height = '0px';
+  el.style.opacity = '0';
+  const target = el.scrollHeight;
+  requestAnimationFrame(() => {
+    el.style.height = target + 'px';
+    el.style.opacity = '1';
+  });
+}
+
+function animateClose(el) {
+  const start = el.scrollHeight;
+  el.style.height = start + 'px';
+  requestAnimationFrame(() => {
+    el.style.height = '0px';
+    el.style.opacity = '0';
+  });
+}
+
+/* ------------- Screenshot loading ------------- */
+
+function slugify(name) {
+  return name
+    .normalize('NFKD')
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\s/g, '-')
+    .toLowerCase();
+}
+
+function loadScreenshot(imgEl, statusEl, screenshotPath, kitName) {
+  if (imgEl.dataset.loaded === 'true') return;
+
+  if (!screenshotPath) {
+    statusEl.textContent = 'No screenshot path set for this kit. Add “| path/to/image.png” in kits.txt.';
+    imgEl.style.display = 'none';
+    return;
+  }
+
+  statusEl.textContent = 'Loading screenshot…';
+  imgEl.style.display = 'block';
+  imgEl.src = screenshotPath;
+
+  const onLoad = () => {
+    imgEl.dataset.loaded = 'true';
+    statusEl.textContent = '';
+    cleanup();
+  };
+  const onError = () => {
+    statusEl.textContent = `Failed to load: ${screenshotPath}`;
+    imgEl.style.display = 'none';
+    cleanup();
+  };
+  function cleanup() {
+    imgEl.removeEventListener('load', onLoad);
+    imgEl.removeEventListener('error', onError);
+  }
+  imgEl.addEventListener('load', onLoad);
+  imgEl.addEventListener('error', onError);
+}
+
+/* ------------- Highlighting ------------- */
 
 function highlightApprox(blockText, token, match) {
   const lower = singularize(normalize(blockText));
   const t = singularize(normalize(token));
   let hadExact = false;
 
-  // If exact substring in entire block, highlight that
   const idx = lower.indexOf(t);
   if (idx !== -1) {
     hadExact = true;
@@ -290,16 +389,12 @@ function highlightApprox(blockText, token, match) {
     };
   }
 
-  // If we only matched a specific word window, highlight that portion inside the matching word
   if (match && match.start >= 0 && match.end >= 0) {
-    // Reconstruct based on words to place mark at approximate segment
     const words = blockText.split(/\s+/);
     const idxWord = match.inWordIndex;
     if (idxWord >= 0 && idxWord < words.length) {
       const word = words[idxWord];
-      const before = words.slice(0, idxWord).join(' ');
-      const after = words.slice(idxWord + 1).join(' ');
-      const wordLower = words[idxWord].toLowerCase();
+      const wordLower = word.toLowerCase();
       const s = match.start;
       const e = match.end;
 
@@ -310,13 +405,11 @@ function highlightApprox(blockText, token, match) {
         '</mark>' +
         escapeHtml(wordLower.slice(e).split('').map((c, i) => word[e + i]).join(''));
 
-      const joinLeft = before ? escapeHtml(before) + ' ' : '';
-      const joinRight = after ? ' ' + escapeHtml(after) : '';
-      return { html: joinLeft + markedWord + joinRight, hadExact: false };
+      words[idxWord] = markedWord;
+      return { html: words.map((w, i) => (i === idxWord ? w : escapeHtml(w))).join(' '), hadExact: false };
     }
   }
 
-  // Fallback: no exact window we can place reliably; return full chip text, marked as fuzzy via CSS
   return { html: escapeHtml(blockText), hadExact: false };
 }
 
@@ -326,7 +419,8 @@ function escapeHtml(s) {
   }[c]));
 }
 
-// tiny helpers
+/* ------------- tiny helpers ------------- */
+
 function el(tag, className, text) {
   const e = document.createElement(tag);
   if (className) e.className = className;
